@@ -1,0 +1,640 @@
+From 384cff3185417e7838a57a26fea6543707ea8857 Mon Sep 17 00:00:00 2001
+From: Dennis Gilmore <dennis@ausil.us>
+Date: Fri, 6 Nov 2026 19:53:12 -0600
+Subject: [PATCH 1/2] Port to modern .NET for Linux (x86_64/aarch64) and
+ Windows builds
+
+- Convert imlac.csproj to SDK-style targeting net10.0 (RollForward=Major),
+  replacing the .NET Framework 4.0 / x86-only project.
+- Switch to ppy.SDL2-CS (bundles native SDL2 for win-x64 and linux-x64;
+  falls back to system libSDL2 elsewhere, e.g. linux-arm64) and add
+  System.IO.Ports.
+- HighResTimer now uses Stopwatch; FrameTimer keeps the Win32 timer queue
+  on Windows and uses a Stopwatch sleep/spin scheduler elsewhere.
+- Only call SetProcessDPIAware on Windows; drop unused WinForms import.
+- Resolve libSDL2-2.0.so.0 on Linux when the unversioned .so is missing.
+- Replace Thread.Abort (unsupported on .NET Core) with a background
+  debugger thread and Environment.Exit.
+- Locate boot files relative to the executable.
+- Use File.ReadAllBytes for paper tapes to avoid partial reads.
+- Solution uses Any CPU.
+- Replace Travis/AppVeyor with a GitHub Actions matrix (linux-x64,
+  linux-arm64, win-x64) publishing self-contained single-file builds.
+- Document build steps and SDL2 requirements in README.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .github/workflows/build.yml |  39 +++++++++++
+ .travis.yml                 |   2 -
+ README.md                   |  33 ++++++++-
+ appveyor.yml                |   8 ---
+ imlac.sln                   |  12 ++--
+ imlac/EntryPoint.cs         |   8 ++-
+ imlac/HighResTimer.cs       | 115 ++++++++++++++++++++------------
+ imlac/IO/PaperTapeReader.cs |   7 +-
+ imlac/Paths.cs              |   7 +-
+ imlac/SDLConsole.cs         |  40 ++++++++---
+ imlac/app.config            |   3 -
+ imlac/imlac.csproj          | 129 ++++++------------------------------
+ imlac/packages.config       |   4 --
+ 13 files changed, 216 insertions(+), 191 deletions(-)
+ create mode 100644 .github/workflows/build.yml
+ delete mode 100644 .travis.yml
+ delete mode 100644 appveyor.yml
+ delete mode 100644 imlac/app.config
+ delete mode 100644 imlac/packages.config
+
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+new file mode 100644
+index 0000000..fd7e1bd
+--- /dev/null
++++ b/.github/workflows/build.yml
+@@ -0,0 +1,39 @@
++name: Build
++
++on:
++  push:
++  pull_request:
++  workflow_dispatch:
++
++jobs:
++  build:
++    strategy:
++      fail-fast: false
++      matrix:
++        include:
++          - os: ubuntu-latest
++            rid: linux-x64
++          - os: ubuntu-24.04-arm
++            rid: linux-arm64
++          - os: windows-latest
++            rid: win-x64
++    runs-on: ${{ matrix.os }}
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: actions/setup-dotnet@v4
++        with:
++          dotnet-version: '10.0.x'
++
++      - name: Build
++        run: dotnet build imlac.sln -c Release
++
++      - name: Publish
++        run: >
++          dotnet publish imlac/imlac.csproj -c Release -r ${{ matrix.rid }}
++          --self-contained -p:PublishSingleFile=true -o publish/${{ matrix.rid }}
++
++      - uses: actions/upload-artifact@v4
++        with:
++          name: sImlac-${{ matrix.rid }}
++          path: publish/${{ matrix.rid }}
+diff --git a/.travis.yml b/.travis.yml
+deleted file mode 100644
+index 8de1bd9..0000000
+--- a/.travis.yml
++++ /dev/null
+@@ -1,2 +0,0 @@
+-language: csharp
+-solution: imlac.sln
+diff --git a/README.md b/README.md
+index f4ecf7f..65cb084 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,32 @@
+-![Build Status](https://api.travis-ci.org/livingcomputermuseum/sImlac.svg)
++[![Build](https://github.com/ausil/sImlac/actions/workflows/build.yml/badge.svg)](https://github.com/ausil/sImlac/actions/workflows/build.yml)
+ 
+-[![AppVeyor](https://ci.appveyor.com/api/projects/status/butfmm8cd5vge16l?svg=true)](https://ci.appveyor.com/project/larsbrinkhoff/sImlac/history)
++# sImlac
++
++An Imlac PDS-1 / PDS-4 emulator.
++
++## Building
++
++sImlac targets .NET 10 and builds on Linux (x86_64 and aarch64) and Windows.
++
++Install the [.NET 10 SDK](https://dotnet.microsoft.com/download) (or newer), then:
++
++    dotnet build imlac.sln -c Release
++
++To run from the source tree:
++
++    dotnet run --project imlac
++
++To produce a self-contained executable for a given platform:
++
++    dotnet publish imlac/imlac.csproj -c Release -r linux-x64   --self-contained -p:PublishSingleFile=true -o publish/linux-x64
++    dotnet publish imlac/imlac.csproj -c Release -r linux-arm64 --self-contained -p:PublishSingleFile=true -o publish/linux-arm64
++    dotnet publish imlac/imlac.csproj -c Release -r win-x64     --self-contained -p:PublishSingleFile=true -o publish/win-x64
++
++## SDL2
++
++The display uses SDL2. A bundled SDL2 library is included for Windows x64 and
++Linux x86_64. On Linux aarch64 (and as a fallback elsewhere) install SDL2 from
++your distribution:
++
++    sudo dnf install sdl2-compat    # Fedora
++    sudo apt install libsdl2-2.0-0  # Debian / Ubuntu
+diff --git a/appveyor.yml b/appveyor.yml
+deleted file mode 100644
+index bbc689c..0000000
+--- a/appveyor.yml
++++ /dev/null
+@@ -1,8 +0,0 @@
+-platform:
+-  - x86
+-install:
+-  - nuget restore
+-build:
+-  project: imlac.sln
+-artifacts:
+-  - path: imlac/bin
+diff --git a/imlac.sln b/imlac.sln
+index 73f51d3..f5fe836 100644
+--- a/imlac.sln
++++ b/imlac.sln
+@@ -9,14 +9,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution
+ EndProject
+ Global
+ 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+-		Debug|x86 = Debug|x86
+-		Release|x86 = Release|x86
++		Debug|Any CPU = Debug|Any CPU
++		Release|Any CPU = Release|Any CPU
+ 	EndGlobalSection
+ 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+-		{EBD26AE3-7570-45C7-85FD-7AE8DB0112AB}.Debug|x86.ActiveCfg = Debug|x86
+-		{EBD26AE3-7570-45C7-85FD-7AE8DB0112AB}.Debug|x86.Build.0 = Debug|x86
+-		{EBD26AE3-7570-45C7-85FD-7AE8DB0112AB}.Release|x86.ActiveCfg = Release|x86
+-		{EBD26AE3-7570-45C7-85FD-7AE8DB0112AB}.Release|x86.Build.0 = Release|x86
++		{EBD26AE3-7570-45C7-85FD-7AE8DB0112AB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
++		{EBD26AE3-7570-45C7-85FD-7AE8DB0112AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
++		{EBD26AE3-7570-45C7-85FD-7AE8DB0112AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
++		{EBD26AE3-7570-45C7-85FD-7AE8DB0112AB}.Release|Any CPU.Build.0 = Release|Any CPU
+ 	EndGlobalSection
+ 	GlobalSection(SolutionProperties) = preSolution
+ 		HideSolutionNode = FALSE
+diff --git a/imlac/EntryPoint.cs b/imlac/EntryPoint.cs
+index d57966a..d3bcf09 100644
+--- a/imlac/EntryPoint.cs
++++ b/imlac/EntryPoint.cs
+@@ -41,6 +41,8 @@ namespace imlac
+             // Start the debugger / execution thread
+             //
+             _debuggerThread = new System.Threading.Thread(new System.Threading.ThreadStart(DebuggerThread));
++            // Background thread so that the process exits when the display window is closed.
++            _debuggerThread.IsBackground = true;
+             _debuggerThread.Start();
+ 
+             //
+@@ -49,9 +51,11 @@ namespace imlac
+             _console.Show();
+ 
+             //
+-            // Kill the system if it's still running.
++            // Kill the system if it's still running.  (Thread.Abort is not supported
++            // on modern .NET; the debugger thread is a background thread and will be
++            // torn down when the process exits.)
+             //
+-            _debuggerThread.Abort();
++            Environment.Exit(0);
+         }
+ 
+         private static void DebuggerThread()
+diff --git a/imlac/HighResTimer.cs b/imlac/HighResTimer.cs
+index f905163..0aec223 100644
+--- a/imlac/HighResTimer.cs
++++ b/imlac/HighResTimer.cs
+@@ -17,49 +17,25 @@
+ 
+ using System;
+ using System.Runtime.InteropServices;
+-using System.ComponentModel;
++using System.Diagnostics;
+ using System.Threading;
+ 
+ namespace imlac
+ {
+-	/// <summary>
+-	/// HighResTimer gives us access to NT's very-high-resolution PerformanceCounters.
+-	/// This gives us the precision we need to sync emulation to any speed we desire.
+-	/// </summary>
++    /// <summary>
++    /// HighResTimer gives us access to the platform's high-resolution performance counter.
++    /// This gives us the precision we need to sync emulation to any speed we desire.
++    /// </summary>
+     public sealed class HighResTimer
+-	{
+-		[DllImport("Kernel32.dll")]
+-		private static extern bool QueryPerformanceCounter(
+-			out long lpPerformanceCount);
+-
+-		[DllImport("Kernel32.dll")]
+-		private static extern bool QueryPerformanceFrequency(
+-			out long lpFrequency);		
+-
+-		public HighResTimer()
+-		{
+-			//What's the frequency, Kenneth?
+-			if (QueryPerformanceFrequency(out _frequency) == false)
+-			{
+-				// high-performance counter not supported
+-				throw new Win32Exception();
+-			}
+-		}
+-
+-		/// <summary>
+-		/// Returns the current time in seconds.
+-		/// </summary>
+-		/// <returns></returns>
+-		public double GetCurrentTime()
+-		{
+-			long currentTime;
+-			QueryPerformanceCounter(out currentTime);
+-
+-			return (double)(currentTime) / (double)_frequency;
+-		}
+-
+-        private long	_frequency;
+-	}
++    {
++        /// <summary>
++        /// Returns the current time in seconds.
++        /// </summary>
++        public double GetCurrentTime()
++        {
++            return (double)Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
++        }
++    }
+ 
+     public sealed class FrameTimer
+     {
+@@ -109,7 +85,19 @@ namespace imlac
+         /// </summary>
+         /// <param name="framesPerSecond">The frame rate to sync to.</param>
+         public FrameTimer(double framesPerSecond)
+-        {          
++        {
++            if (!OperatingSystem.IsWindows())
++            {
++                //
++                // Non-Windows platforms: use a Stopwatch-based scheduler.
++                // Sleep resolution on Linux/macOS is fine-grained enough that
++                // we can sleep most of the way and spin for the remainder.
++                //
++                _portable = true;
++                _framePeriodTicks = (long)(Stopwatch.Frequency / framesPerSecond);
++                _nextFrameTicks = Stopwatch.GetTimestamp() + _framePeriodTicks;
++                return;
++            }
+             //
+             // Set the timer to the minimum value (1ms).  This should be supported on any modern x86 system.
+             // If not, too bad...
+@@ -155,6 +143,11 @@ namespace imlac
+ 
+         ~FrameTimer()
+         {
++            if (_portable)
++            {
++                return;
++            }
++
+             try
+             {
+                 //
+@@ -179,8 +172,44 @@ namespace imlac
+         /// Waits for the timer to fire.
+         /// </summary>
+         public void WaitForFrame()
+-        {            
+-            _event.WaitOne();
++        {
++            if (_portable)
++            {
++                WaitForFramePortable();
++            }
++            else
++            {
++                _event.WaitOne();
++            }
++        }
++
++        private void WaitForFramePortable()
++        {
++            long now = Stopwatch.GetTimestamp();
++            long remaining = _nextFrameTicks - now;
++
++            if (remaining > 0)
++            {
++                // Sleep until ~1ms before the deadline, then spin.
++                long sleepMs = (remaining * 1000 / Stopwatch.Frequency) - 1;
++                if (sleepMs > 0)
++                {
++                    Thread.Sleep((int)sleepMs);
++                }
++
++                while (Stopwatch.GetTimestamp() < _nextFrameTicks)
++                {
++                    Thread.SpinWait(50);
++                }
++
++                _nextFrameTicks += _framePeriodTicks;
++            }
++            else
++            {
++                // We fell behind by more than a frame; resynchronize rather than
++                // trying to catch up with a burst of frames.
++                _nextFrameTicks = now + _framePeriodTicks;
++            }
+         }
+ 
+         /// <summary>
+@@ -203,6 +232,10 @@ namespace imlac
+             }
+         }       
+         
++        private bool _portable;
++        private long _framePeriodTicks;
++        private long _nextFrameTicks;
++
+         private IntPtr _hTimerQueue;        
+         private IntPtr _hTimer;        
+         private AutoResetEvent _event;
+diff --git a/imlac/IO/PaperTapeReader.cs b/imlac/IO/PaperTapeReader.cs
+index 0be952e..7079055 100644
+--- a/imlac/IO/PaperTapeReader.cs
++++ b/imlac/IO/PaperTapeReader.cs
+@@ -70,12 +70,7 @@ namespace imlac.IO
+             _state = ReaderState.Stopped;
+             _tapeIndex = 0;
+ 
+-            FileStream fs = File.OpenRead(path);
+-            _tapeContents = new byte[fs.Length];
+-
+-            fs.Read(_tapeContents, 0, (int)fs.Length);
+-
+-            fs.Close();
++            _tapeContents = File.ReadAllBytes(path);
+         }
+ 
+         public int[] GetHandledIOTs()
+diff --git a/imlac/Paths.cs b/imlac/Paths.cs
+index 2e51ec7..b73f641 100644
+--- a/imlac/Paths.cs
++++ b/imlac/Paths.cs
+@@ -15,6 +15,7 @@
+     along with sImlac.  If not, see <http://www.gnu.org/licenses/>.
+ */
+ 
++using System;
+ using System.IO;
+ 
+ namespace imlac
+@@ -29,7 +30,11 @@ namespace imlac
+             return Path.Combine(_boot, file);
+         }
+ 
+-        private static string _boot = "boot";
++        // Look for boot files next to the executable first (so the emulator can be
++        // started from any working directory), falling back to the current directory.
++        private static string _boot =
++            Directory.Exists(Path.Combine(AppContext.BaseDirectory, "boot")) ?
++                Path.Combine(AppContext.BaseDirectory, "boot") : "boot";
+ 
+     }
+ }
+diff --git a/imlac/SDLConsole.cs b/imlac/SDLConsole.cs
+index 39c90e6..84a1c19 100644
+--- a/imlac/SDLConsole.cs
++++ b/imlac/SDLConsole.cs
+@@ -17,7 +17,6 @@
+ 
+ using System;
+ using System.Collections.Generic;
+-using System.Windows.Forms;
+ using System.Drawing;
+ using System.Threading;
+ 
+@@ -43,6 +42,28 @@ namespace imlac
+         [DllImport("user32.dll", SetLastError = true)]
+         static extern bool SetProcessDPIAware();
+ 
++        static SDLConsole()
++        {
++            //
++            // The SDL2 bindings import "SDL2".  On Linux the unversioned libSDL2.so is often
++            // only installed with development packages, so fall back to the versioned runtime
++            // library name if the default lookup fails.
++            //
++            NativeLibrary.SetDllImportResolver(typeof(SDL).Assembly, (name, assembly, searchPath) =>
++            {
++                if (name == "SDL2" && OperatingSystem.IsLinux())
++                {
++                    if (NativeLibrary.TryLoad("libSDL2-2.0.so.0", assembly, searchPath, out IntPtr handle) ||
++                        NativeLibrary.TryLoad("libSDL2.so", assembly, searchPath, out handle))
++                    {
++                        return handle;
++                    }
++                }
++
++                return IntPtr.Zero;
++            });
++        }
++
+         public SDLConsole(float scaleFactor)
+         {
+             if (scaleFactor <= 0)
+@@ -228,14 +249,17 @@ namespace imlac
+ 
+         private void InitializeSDL()
+         {
+-            try
+-            {
+-                // Set high DPI awareness on Windows platforms, if this fails it's OK.
+-                SetProcessDPIAware();
+-            }
+-            catch
++            if (OperatingSystem.IsWindows())
+             {
+-                // Nothing to do.
++                try
++                {
++                    // Set high DPI awareness on Windows platforms, if this fails it's OK.
++                    SetProcessDPIAware();
++                }
++                catch
++                {
++                    // Nothing to do.
++                }
+             }
+ 
+             DoUpdateDisplayScale();
+diff --git a/imlac/app.config b/imlac/app.config
+deleted file mode 100644
+index e365603..0000000
+--- a/imlac/app.config
++++ /dev/null
+@@ -1,3 +0,0 @@
+-<?xml version="1.0"?>
+-<configuration>
+-<startup><supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.0"/></startup></configuration>
+diff --git a/imlac/imlac.csproj b/imlac/imlac.csproj
+index 6404b01..01470ca 100644
+--- a/imlac/imlac.csproj
++++ b/imlac/imlac.csproj
+@@ -1,118 +1,31 @@
+-﻿<?xml version="1.0" encoding="utf-8"?>
+-<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
++<Project Sdk="Microsoft.NET.Sdk">
++
+   <PropertyGroup>
+-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+-    <Platform Condition=" '$(Platform)' == '' ">x86</Platform>
+-    <ProductVersion>8.0.30703</ProductVersion>
+-    <SchemaVersion>2.0</SchemaVersion>
+-    <ProjectGuid>{EBD26AE3-7570-45C7-85FD-7AE8DB0112AB}</ProjectGuid>
+     <OutputType>Exe</OutputType>
+-    <AppDesignerFolder>Properties</AppDesignerFolder>
++    <TargetFramework>net10.0</TargetFramework>
++    <!-- Allow running on newer .NET runtimes when net10.0 isn't installed. -->
++    <RollForward>Major</RollForward>
+     <RootNamespace>imlac</RootNamespace>
+     <AssemblyName>sImlac</AssemblyName>
+-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+-    <TargetFrameworkProfile>
+-    </TargetFrameworkProfile>
+-    <FileAlignment>512</FileAlignment>
+-  </PropertyGroup>
+-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
+-    <PlatformTarget>x86</PlatformTarget>
+-    <DebugSymbols>true</DebugSymbols>
+-    <DebugType>full</DebugType>
+-    <Optimize>false</Optimize>
+-    <OutputPath>bin\Debug\</OutputPath>
+-    <DefineConstants>DEBUG;TRACE</DefineConstants>
+-    <ErrorReport>prompt</ErrorReport>
+-    <WarningLevel>4</WarningLevel>
+-  </PropertyGroup>
+-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
+-    <PlatformTarget>x86</PlatformTarget>
+-    <DebugType>pdbonly</DebugType>
+-    <Optimize>true</Optimize>
+-    <OutputPath>bin\Release\</OutputPath>
+-    <DefineConstants>TRACE</DefineConstants>
+-    <ErrorReport>prompt</ErrorReport>
+-    <WarningLevel>4</WarningLevel>
+-  </PropertyGroup>
+-  <PropertyGroup>
++    <Nullable>disable</Nullable>
++    <ImplicitUsings>disable</ImplicitUsings>
++    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
++    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+     <ApplicationManifest>app.manifest</ApplicationManifest>
++    <RuntimeIdentifiers>linux-x64;linux-arm64;win-x64</RuntimeIdentifiers>
+   </PropertyGroup>
++
+   <ItemGroup>
+-    <Reference Include="SDL2-CS, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+-      <HintPath>..\packages\SDL2-CS.dll.2.0.0.0\lib\net20\SDL2-CS.dll</HintPath>
+-    </Reference>
+-    <Reference Include="System" />
+-    <Reference Include="System.Core" />
+-    <Reference Include="System.Drawing" />
+-    <Reference Include="System.Windows.Forms" />
+-    <Reference Include="Microsoft.CSharp" />
+-    <Reference Include="System.Data" />
+-  </ItemGroup>
+-  <ItemGroup>
+-    <Compile Include="Configuration.cs" />
+-    <Compile Include="Debugger\BreakpointManager.cs" />
+-    <Compile Include="Debugger\Console.cs" />
+-    <Compile Include="Debugger\DebuggerAttributes.cs" />
+-    <Compile Include="Debugger\DebuggerPrompt.cs" />
+-    <Compile Include="PDS4DisplayProcessor.cs" />
+-    <Compile Include="PDS1DisplayProcessor.cs" />
+-    <Compile Include="HighResTimer.cs" />
+-    <Compile Include="IO\TTYChannels\NullDataChannel.cs" />
+-    <Compile Include="IO\TTYChannels\SerialDataChannel.cs" />
+-    <Compile Include="IO\TTYChannels\StreamDataChannel.cs" />
+-    <Compile Include="IO\TTYChannels\ISerialDataChannel.cs" />
+-    <Compile Include="IO\TTYChannels\TelnetDataChannel.cs" />
+-    <Compile Include="SDLConsole.cs" />
+-    <Compile Include="DisplayProcessor.cs" />
+-    <Compile Include="Helpers.cs" />
+-    <Compile Include="IImlacConsole.cs" />
+-    <Compile Include="IO\IIOTDevice.cs" />
+-    <Compile Include="IO\InterruptFacility.cs" />
+-    <Compile Include="IO\Keyboard.cs" />
+-    <Compile Include="IO\PaperTapeReader.cs" />
+-    <Compile Include="IO\Clock.cs" />
+-    <Compile Include="IO\TTY.cs" />
+-    <Compile Include="Paths.cs" />
+-    <Compile Include="Processor.cs" />
+-    <Compile Include="Memory.cs" />
+-    <Compile Include="EntryPoint.cs" />
+-    <Compile Include="Properties\AssemblyInfo.cs" />
+-    <Compile Include="System.cs" />
+-    <Compile Include="Trace.cs" />
+-  </ItemGroup>
+-  <ItemGroup>
+-    <Content Include="notes\ptr bootstrap disassembly.txt" />
+-    <Content Include="notes\PDS-1D bootstrap.txt" />
+-    <Content Include="notes\readme.txt">
+-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+-    </Content>
+-    <Content Include="notes\software.txt">
+-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+-    </Content>
++    <!-- SDL2 bindings; bundles native SDL2 for win-x64/x86, linux-x64 and macOS.
++         On other platforms (e.g. linux-arm64) the system libSDL2 is used. -->
++    <PackageReference Include="ppy.SDL2-CS" Version="1.0.82" />
++    <PackageReference Include="System.IO.Ports" Version="10.0.0" />
+   </ItemGroup>
++
+   <ItemGroup>
+-    <None Include="app.config" />
+-    <None Include="app.manifest" />
+-    <None Include="boot\mtty">
+-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+-    </None>
+-    <None Include="boot\ptr">
+-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+-    </None>
+-    <None Include="boot\stty">
+-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+-    </None>
+-    <None Include="boot\tty">
+-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+-    </None>
+-    <None Include="packages.config" />
++    <None Update="boot\*" CopyToOutputDirectory="PreserveNewest" />
++    <None Update="notes\readme.txt" CopyToOutputDirectory="PreserveNewest" />
++    <None Update="notes\software.txt" CopyToOutputDirectory="PreserveNewest" />
+   </ItemGroup>
+-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+-       Other similar extension points exist, see Microsoft.Common.targets.
+-  <Target Name="BeforeBuild">
+-  </Target>
+-  <Target Name="AfterBuild">
+-  </Target>
+-  -->
+-</Project>
+\ No newline at end of file
++
++</Project>
+diff --git a/imlac/packages.config b/imlac/packages.config
+deleted file mode 100644
+index f0fbcf0..0000000
+--- a/imlac/packages.config
++++ /dev/null
+@@ -1,4 +0,0 @@
+-﻿<?xml version="1.0" encoding="utf-8"?>
+-<packages>
+-  <package id="SDL2-CS.dll" version="2.0.0.0" targetFramework="net40" />
+-</packages>
+\ No newline at end of file
+-- 
+2.56.0
+

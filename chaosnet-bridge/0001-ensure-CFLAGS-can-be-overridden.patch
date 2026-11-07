@@ -1,0 +1,37 @@
+From 140be0af1541bda3452ca3d4d3091a472ace9215 Mon Sep 17 00:00:00 2001
+From: Dennis Gilmore <dennis@ausil.us>
+Date: Fri, 6 Nov 2026 15:55:27 -0600
+Subject: [PATCH] ensure CFLAGS can be overridden
+
+Signed-off-by: Dennis Gilmore <dennis@ausil.us>
+---
+ src/Makefile | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/Makefile b/src/Makefile
+index 13c4e2b..6292b0c 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -3,7 +3,7 @@ MACH_NAME = $(shell uname -m)
+ 
+ # default
+ LIBRESOLV=-lresolv
+-CFLAGS = -g
++CFLAGS+=-g -fPIC -fPIE -pie
+ 
+ # Mac OSX
+ ifeq ($(OS_NAME), Darwin)
+@@ -13,8 +13,8 @@ PFX=/opt/local
+ ifneq ($(HOMEBREW_PREFIX),)
+   PFX=$(HOMEBREW_PREFIX)
+ endif
+-LDFLAGS = -L$(PFX)/lib
+-CFLAGS = -I$(PFX)/include -g
++LDFLAGS+=-L$(PFX)/lib
++CFLAGS+=-I$(PFX)/include -g
+ # To make chaosnet dns work in macOS >= 15.4, you may need to install libbind (which needs tbl which comes with groff).
+ # Use "make WITH_BIND=yes" to try bind instead of resolv.
+ ifeq ($(WITH_BIND), yes)
+-- 
+2.56.0
+

@@ -1,0 +1,152 @@
+From 78c1a13089314dec873b44ea26e15a67a5e9d2ea Mon Sep 17 00:00:00 2001
+From: Dennis Gilmore <dennis@ausil.us>
+Date: Thu, 5 Nov 2026 08:17:28 -0600
+Subject: [PATCH] Recover when the audio backend never drains its queue
+
+speaker() paces the CPU thread by sleeping until the SDL audio queue
+drains.  With sdl2-compat on top of SDL 3, audio queued from a
+non-main thread is never consumed, so the sleep became infinite and
+the CPU thread - and with it screen refresh and the PTY - froze
+shortly after startup.
+
+Detect a backend that isn't draining (no progress across 50 sleep
+windows), warn, and stop queueing sound.  The CPU thread then paces
+on wall time through throttle() instead.
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>
+---
+ vt100/main.c  | 36 +++++++++++++++++++++++++-----------
+ vt100/sound.c | 29 +++++++++++++++++++++++++++--
+ vt100/vt100.h |  1 +
+ 3 files changed, 53 insertions(+), 13 deletions(-)
+
+diff --git a/vt100/main.c b/vt100/main.c
+index d1a41d9..639a289 100644
+--- a/vt100/main.c
++++ b/vt100/main.c
+@@ -59,20 +59,20 @@ void bdos_out (u8 port, u8 data)
+   }
+ }
+ 
+-Uint32 ticks;
+-unsigned long long previous;
++static Uint32 throttle_ticks;
++static unsigned long long throttle_previous;
+ 
+ static void throttle (void)
+ {
+-  ticks = SDL_GetTicks () - ticks;
+-  previous = get_cycles () - previous;
+-  ticks *= 2765;
+-  if (previous > 1000000)
+-    LOG (CPU, "Large number of cycles: %llu", previous);
+-  else if (previous > ticks)
+-    SDL_Delay ((previous - ticks) / 2765);
+-  ticks = SDL_GetTicks ();
+-  previous = get_cycles ();
++  throttle_ticks = SDL_GetTicks () - throttle_ticks;
++  throttle_previous = get_cycles () - throttle_previous;
++  throttle_ticks *= 2765;
++  if (throttle_previous > 1000000)
++    LOG (CPU, "Large number of cycles: %llu", throttle_previous);
++  else if (throttle_previous > throttle_ticks)
++    SDL_Delay ((throttle_previous - throttle_ticks) / 2765);
++  throttle_ticks = SDL_GetTicks ();
++  throttle_previous = get_cycles ();
+ }
+ 
+ static void run (char *file)
+@@ -102,12 +102,26 @@ static void run (char *file)
+ static int cputhread (void *arg)
+ {
+   unsigned long long cycles, previous = get_cycles ();
++  int pacing = 0;
+   memcpy (memory, vt100rom, 0x2000);
+   for (;;) {
+     execute ();
+     cycles = get_cycles ();
+     events (cycles - previous);
+     previous = cycles;
++    if (audio_stalled)
++      {
++        //The audio queue no longer paces the simulation; run at
++        //roughly real CPU speed against the wall clock instead.
++        if (!pacing)
++          {
++            pacing = 1;
++            throttle_ticks = SDL_GetTicks ();
++            throttle_previous = get_cycles ();
++          }
++        else if (cycles - throttle_previous > 27650)
++          throttle ();
++      }
+   }
+   return 0;
+ }
+diff --git a/vt100/sound.c b/vt100/sound.c
+index 3f66f44..710ad2d 100644
+--- a/vt100/sound.c
++++ b/vt100/sound.c
+@@ -12,6 +12,7 @@
+ #endif
+ 
+ int sound_scope;
++int audio_stalled;
+ static SDL_AudioDeviceID dev;
+ static float charge;
+ static float voltage;
+@@ -56,13 +57,37 @@ static void speaker (void)
+ {
+   Uint32 queued;
+   int i;
++  static int undrained;
+   //number of bytes
+   queued = SDL_GetQueuedAudioSize (dev);
+   if (queued == 0)
+     LOG (SND, "Queue empty");
+   else if (queued > 30*48)
+-    //Sleep until there are 20 ms of audio queued.
+-    SDL_Delay ((queued - 20*48) / 48);
++    {
++      Uint32 before = queued;
++      //Sleep until there are 20 ms of audio queued.
++      SDL_Delay ((queued - 20*48) / 48);
++      queued = SDL_GetQueuedAudioSize (dev);
++      if (queued >= before)
++        {
++          //Nothing was consumed while we slept.  If the backend never
++          //drains (seen with sdl2-compat on top of SDL 3), sleeping
++          //forever below would stall the CPU thread and with it the
++          //whole emulator, so give up on sound and let the CPU thread
++          //pace on wall time instead.
++          if (++undrained >= 50)
++            {
++              fprintf (stderr, "vt100: The audio backend is not draining "
++                       "the queue; running without sound.\n");
++              audio_stalled = 1;
++              SDL_PauseAudioDevice (dev, 1);
++              SDL_ClearQueuedAudio (dev);
++              return;
++            }
++        }
++      else
++        undrained = 0;
++    }
+ 
+   for (i = 0; i < SAMPLES; i++)
+     buffer[i] = sample ();
+diff --git a/vt100/vt100.h b/vt100/vt100.h
+index 57bb8fe..b24d58c 100644
+--- a/vt100/vt100.h
++++ b/vt100/vt100.h
+@@ -20,6 +20,7 @@ extern unsigned long long get_cycles (void);
+ extern u8 vt100_flags;
+ extern int pty;
+ extern int sound_scope;
++extern int audio_stalled;
+ extern int field_rate;
+ 
+ extern int quick;
+-- 
+2.56.0
+

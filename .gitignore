@@ -1,0 +1,8 @@
+*.tar.bz2
+*.src.rpm
+*-build/
+.build-*.log
+/*/aarch64/
+/*/x86_64/
+/*/noarch/
+*.tar.xz

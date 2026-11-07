@@ -1,0 +1,108 @@
+From 9ddee354c112b3df2d129041929ebd66a9a72217 Mon Sep 17 00:00:00 2001
+From: Dennis Gilmore <dennis@ausil.us>
+Date: Sat, 7 Nov 2026 12:25:54 -0600
+Subject: [PATCH 2/2] add option to flip the case of text typing
+
+SSV terminal app was designed for ITS and flips the case so standard
+typing is uppercase, and capslock has no effect. using with bsd-2.11 on
+a pdp11 you have to hold shift while typing. this change lets you pass
+in some options on the debug console:
+
+  enable case invert
+  disable case invert
+
+Signed-off-by: Dennis Gilmore <dennis@ausil.us>
+---
+ imlac/Configuration.cs                    |  2 ++
+ imlac/IO/Keyboard.cs                      | 11 ++++++++++-
+ imlac/IO/TTYChannels/TelnetDataChannel.cs |  7 +++++--
+ imlac/System.cs                           | 14 ++++++++++++++
+ 4 files changed, 31 insertions(+), 3 deletions(-)
+
+diff --git a/imlac/Configuration.cs b/imlac/Configuration.cs
+index 51a3039..317d45c 100644
+--- a/imlac/Configuration.cs
++++ b/imlac/Configuration.cs
+@@ -21,6 +21,7 @@ namespace imlac
+             SquiggleMode = false;
+             ShowInvisibleVectors = false;
+             HaltOnInvalidOpcodes = true;
++            CaseInvert = false;
+         }
+         //
+         // Static System configuration parameters
+@@ -30,5 +31,6 @@ namespace imlac
+         public static bool          SquiggleMode;
+         public static bool          ShowInvisibleVectors;
+         public static bool          HaltOnInvalidOpcodes;
++        public static bool          CaseInvert;
+     }
+ }
+diff --git a/imlac/IO/Keyboard.cs b/imlac/IO/Keyboard.cs
+index 4477486..d393d01 100644
+--- a/imlac/IO/Keyboard.cs
++++ b/imlac/IO/Keyboard.cs
+@@ -178,7 +178,16 @@ namespace imlac.IO
+ 
+             if (key != ImlacKey.Invalid)
+             {
+-                scanCode = (modifiers & ImlacKeyModifiers.Shift) != 0 ? _keyMappings[key].ShiftedCode : _keyMappings[key].NormalCode;
++                bool shiftHeld = (modifiers & ImlacKeyModifiers.Shift) != 0;
++
++                // CaseInvert swaps normal/shifted *only* for letter keys, to compensate for
++                // terminal programs (e.g. ssv) that apply their own ITS-style case inversion
++                // when talking to a case-sensitive (non-ITS) host.  Left off by default so
++                // real hardware behavior is preserved for ITS-targeted software.
++                bool isLetterKey = key >= ImlacKey.A && key <= ImlacKey.Z;
++                bool useShiftedCode = (isLetterKey && Configuration.CaseInvert) ? !shiftHeld : shiftHeld;
++
++                scanCode = useShiftedCode ? _keyMappings[key].ShiftedCode : _keyMappings[key].NormalCode;
+ 
+                 if (scanCode == 0)
+                 {
+diff --git a/imlac/IO/TTYChannels/TelnetDataChannel.cs b/imlac/IO/TTYChannels/TelnetDataChannel.cs
+index 2e1a6c8..888fef9 100644
+--- a/imlac/IO/TTYChannels/TelnetDataChannel.cs
++++ b/imlac/IO/TTYChannels/TelnetDataChannel.cs
+@@ -35,8 +35,11 @@ namespace imlac.IO.TTYChannels
+ 
+         public void Close()
+         {
+-            _telnetStream.Close();
+-            _telnetStream = null;
++            if (_telnetStream != null)
++            {
++                _telnetStream.Close();
++                _telnetStream = null;
++            }
+         }
+ 
+         public byte Read()
+diff --git a/imlac/System.cs b/imlac/System.cs
+index 667c997..a0a49d5 100644
+--- a/imlac/System.cs
++++ b/imlac/System.cs
+@@ -529,6 +529,20 @@ namespace imlac
+             return SystemExecutionState.Debugging;
+         }
+ 
++        [DebuggerFunction("enable case invert", "Swaps shifted/unshifted case for letter keys (for terminal programs that apply their own ITS-style case inversion).")]
++        private SystemExecutionState EnableCaseInvert()
++        {
++            Configuration.CaseInvert = true;
++            return SystemExecutionState.Debugging;
++        }
++
++        [DebuggerFunction("disable case invert", "Restores normal shifted/unshifted case for letter keys.")]
++        private SystemExecutionState DisableCaseInvert()
++        {
++            Configuration.CaseInvert = false;
++            return SystemExecutionState.Debugging;
++        }
++
+         [DebuggerFunction("enable squiggle mode", "Turns vector perturbations on.")]
+         private SystemExecutionState EnableSquiggleMode()
+         {
+-- 
+2.56.0
+
