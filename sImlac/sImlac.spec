@@ -13,7 +13,7 @@
 
 Name:           sImlac
 Version:        0
-Release:        1.%{gitdate}%{?dist}
+Release:        2.%{gitdate}%{?dist}
 Summary:        Imlac PDS-1 / PDS-4 emulator
 # Source headers say AGPL-3.0-or-later; upstream ships no LICENSE file.
 License:        AGPL-3.0-or-later
@@ -29,6 +29,8 @@ Source3:        make-nuget-cache.sh
 Patch0:         0001-Port-to-modern-.NET-for-Linux-x86_64-aarch64-and-Win.patch
 # Option to flip the case of typed text
 Patch1:         0002-add-option-to-flip-the-case-of-text-typing.patch
+# Fix recursive read lock crash in the telnet async read callback
+Patch2:         0003-Fix-recursive-read-lock-crash-in-telnet-async-read-c.patch
 
 ExclusiveArch:  x86_64 aarch64
 
@@ -72,5 +74,8 @@ ln -s %{name} %{buildroot}%{_bindir}/imlac
 %{_bindir}/imlac
 
 %changelog
-* Sat Nov 07 2026 Dennis Gilmore <dennis@ausil.us> - 0-1.20261106
+* Sat Nov 07 2026 Dennis Gilmore <dennis@ausil.us> - 0-2.20261107
+- Add patch to deal with crash when running top inside of ssv
+
+* Sat Nov 07 2026 Dennis Gilmore <dennis@ausil.us> - 0-1.20261107
 - Initial packaging
