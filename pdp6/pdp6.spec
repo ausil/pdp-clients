@@ -2,7 +2,7 @@
 
 Name:           pdp6
 Version:        1.0
-Release:        1.%{gitdate}%{?dist}
+Release:        2.%{gitdate}%{?dist}
 Summary:        PDP-6 emulator with virtual front panel
 License:        MIT
 URL:            https://github.com/aap/pdp6
@@ -19,8 +19,11 @@ BuildRequires:  pkgconfig(SDL2_image)
 aap's PDP-6 emulator, a low-level C transcription of the DEC schematics.
 It implements the processor, console TTY, paper tape reader and punch,
 data control, DECtape and a 340 display.  This package has the emulator
-with its SDL2 virtual front panel (pdp6), the headless serial-panel
+with its SDL2 virtual front panel (pdp6-emu), the headless serial-panel
 variant (pdp6_s) and the networked variant (pdp6_n).
+
+The binary is called pdp6-emu because the pidp10 package already owns
+/usr/bin/pdp6 (a different, simh-based PDP-6).
 
 The emulator reads init.ini from the current directory; sample startup
 files are in %{_datadir}/%{name}/.
@@ -69,7 +72,9 @@ done
 cp -p dtr2dta dta2dtr
 
 %install
-install -Dm755 -t %{buildroot}%{_bindir} emu/pdp6 emu/pdp6_s emu/pdp6_n
+# pidp10 ships a different /usr/bin/pdp6, so install ours as pdp6-emu.
+install -Dm755 emu/pdp6 %{buildroot}%{_bindir}/pdp6-emu
+install -Dm755 -t %{buildroot}%{_bindir} emu/pdp6_s emu/pdp6_n
 install -Dm755 -t %{buildroot}%{_bindir} panel/panel6
 install -Dm755 -t %{buildroot}%{_bindir} \
     tools/as6 tools/ld6 tools/ptdump tools/dtdump tools/rel \
@@ -81,7 +86,7 @@ install -Dm644 -t %{buildroot}%{_datadir}/%{name}/art art/*.png
 %files
 %license LICENSE
 %doc README.md
-%{_bindir}/pdp6
+%{_bindir}/pdp6-emu
 %{_bindir}/pdp6_s
 %{_bindir}/pdp6_n
 %{_datadir}/%{name}/
@@ -106,6 +111,9 @@ install -Dm644 -t %{buildroot}%{_datadir}/%{name}/art art/*.png
 %{_datadir}/%{name}/art/
 
 %changelog
+* Sat Nov 07 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-2.20261107
+- Install the emulator as pdp6-emu; /usr/bin/pdp6 conflicts with pidp10
+
 * Sat Nov 07 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-1.20261107
 - Build the emulators, tools and standalone panel; split into pdp6,
   pdp6-tools and pdp6-panel
