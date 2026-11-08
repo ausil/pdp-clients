@@ -11,7 +11,9 @@ the COPR project [`ausil/pdp`](https://copr.fedorainfracloud.org/coprs/ausil/pdp
 |---|---|---|
 | `chaosnet-bridge` | [bictorv/chaosnet-bridge](https://github.com/bictorv/chaosnet-bridge/) | Chaosnet bridge between implementations |
 | `chaosnet-tools` | [Chaosnet/chaosnet-tools](https://github.com/Chaosnet/chaosnet-tools) | TCP gateway, MLDEV file transfer, SEND, RTAPE |
-| `pdp6` | [aap/pdp6](https://github.com/aap/pdp6) | `pdp6` (emulator), `pdp6-tools` (as6, ld6, DECtape/paper tape utilities, mkpty33), `pdp6-panel` (standalone front panel) |
+| `rpdp` | [obsolescence/rpdp](https://github.com/obsolescence/rpdp) (scripts only) | `rpdp` launcher for terminals connected to a remote PiDP-10, -11, -8 or -1; config in `/etc/rpdp.conf` |
+| `p7sim` | [aap/p7sim](https://github.com/aap/p7sim) | `p7sim` / `p7simES` P7 phosphor display simulator (PDP-1 Type 30) |
+| `pdp6` | [aap/pdp6](https://github.com/aap/pdp6) | `pdp6-emu` (emulator), `pdp6-tools` (as6, ld6, DECtape/paper tape utilities, mkpty33), `pdp6-panel` (standalone front panel) |
 | `sImlac` | [jdersch/sImlac](https://github.com/jdersch/sImlac) | Imlac PDS-1/PDS-4 emulator (.NET) |
 | `supdup` | [PDP-10/supdup](https://github.com/PDP-10/supdup) | SUPDUP client |
 | `terminal-simulator` | [larsbrinkhoff/terminal-simulator](https://github.com/larsbrinkhoff/terminal-simulator) | VT100 simulation |
@@ -96,3 +98,8 @@ absorbs the change. Current patches:
 - **pdp6** builds with `-std=gnu17` because upstream typedefs `bool`, which
   clashes with the C23 keyword. `fe6/` (real-hardware front end, ARM
   cross-build) and `newemu/` are not packaged.
+- **rpdp** is a noarch package of sources kept in the repo (launcher script,
+  `rpdp.conf`, `ssv22.iml` from obsolescence/rpdp), not a git snapshot, so
+  `update-snapshot.sh` does not apply. It ships no binaries: it requires
+  `tvcon`, `vt05` (vt05, vt52, dp3300), `terminal-simulator` (vt100), `p7sim` (Type 30), `tek4010` and `sImlac`, and recommends
+  `pidp10` for `sty` and the Teletype sounds. Bump `Release:` by hand.

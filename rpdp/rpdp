@@ -1,0 +1,203 @@
+#!/bin/bash
+# rpdp - open terminals on this machine, connected to a remote PiDP.
+# Usage: rpdp [TERMINAL [SYSTEM]]      SYSTEM is 10 (default), 11, 8 or 1
+# Configuration: /etc/rpdp.conf, then ~/.config/rpdp.conf.
+
+PIDP_HOST=pidp10
+PIDP_USER=pi
+[ -r /etc/rpdp.conf ] && . /etc/rpdp.conf
+[ -r "${XDG_CONFIG_HOME:-$HOME/.config}/rpdp.conf" ] && . "${XDG_CONFIG_HOME:-$HOME/.config}/rpdp.conf"
+
+# Default ports; override any of them in rpdp.conf (PORT_VT52=...).
+# Port overrides in the environment work too unless the conf files set them.
+#
+# PiDP-10 (ITS / TOPS-20): one port per terminal type.
+: "${PORT_CON:=1025}" "${PORT_TELCON:=1025}" "${PORT_VT52:=10018}" "${PORT_VT05:=10018}"
+: "${PORT_VT100:=10018}" "${PORT_TVCON:=11100}" "${PORT_TEK:=10017}"
+: "${PORT_DP3300:=10020}" "${PORT_IMLAC:=10003}"
+# The other machines have one terminal port, whatever the terminal is:
+# PiDP-11 2.11BSD DZ11 mux, PiDP-8 TSS/8 ttix, PiDP-1 Soroban typewriter.
+: "${PORT_TYPE30:=3400}" "${PORT_TYPE30B:=3401}"
+: "${PORT_11:=4000}" "${PORT_8:=4000}" "${PORT_1:=1041}"
+
+# Bare names get .local appended (mDNS).
+qualify() {
+    case $1 in
+        *.*|*:*) echo "$1" ;;
+        *) echo "$1.local" ;;
+    esac
+}
+
+usage() {
+    cat <<USAGE
+rpdp - terminals for a remote PiDP
+
+Usage: rpdp [TERMINAL [SYSTEM]]
+
+  (none)   ssh to $PIDP_USER@$(qualify "$PIDP_HOST") and attach to the \`pdp\` screen (Ctrl-A d to leave)
+
+Terminals:
+  con      Teletype console, noisy and slow (sty)
+  telcon   Teletype console, quiet and fast (telnet in a terminal window)
+  vt52     DEC VT-52
+  vt05     DEC VT05
+  vt100    DEC VT100
+  dp3300   Datapoint 3300
+  tek      Tektronix 4010 storage tube graphics
+  imlac    Imlac (PDP-10 ITS: type :tctyp oimlac after logging in)
+  tvcon    Knight TV (PDP-10 only)
+  type30   PDP-1 Type 30 display on the PiDP-1 (port $PORT_TYPE30)
+  type30b  PDP-1 second Type 30 display (port $PORT_TYPE30B)
+
+Systems (default 10; vt100 and imlac11 default to/mean 11):
+  10  PiDP-10   host \$PIDP_HOST,   per-terminal ports
+  11  PiDP-11   host \$PIDP11_HOST, port \$PORT_11 ($PORT_11, DZ11 mux)
+  8   PiDP-8    host \$PIDP8_HOST,  port \$PORT_8 ($PORT_8, TSS/8 ttix)
+  1   PiDP-1    host \$PIDP1_HOST,  port \$PORT_1 ($PORT_1, Soroban typewriter)
+
+Examples:  rpdp type30       PDP-1 Type 30 display
+           rpdp vt52          VT-52 on the PiDP-10
+           rpdp vt100 8       VT100 on the PiDP-8
+           rpdp imlac 11      Imlac on the PiDP-11
+           rpdp telcon 1      telnet window to the PiDP-1 Soroban
+
+Set PIDP_HOST, PIDP11_HOST, PIDP8_HOST, PIDP1_HOST (each defaults to
+PIDP_HOST), PIDP_USER and any PORT_* in /etc/rpdp.conf or
+~/.config/rpdp.conf (or the environment) to match your setup.
+If you switch Teletypes, leave the first one properly (Ctrl-[, quit) or the
+line stays busy.
+USAGE
+}
+
+need() {
+    command -v "$1" >/dev/null 2>&1 && return 0
+    echo "rpdp: $1 not found; install the $2 package" >&2
+    exit 1
+}
+
+# Run detached so the shell prompt comes back.
+bg() { nohup "$@" >/dev/null 2>&1 & }
+
+termwin() {
+    local t
+    for t in lxterminal xterm gnome-terminal konsole; do
+        command -v "$t" >/dev/null 2>&1 || continue
+        case $t in
+            lxterminal) bg "$t" --command="$*" ;;
+            *)          bg "$t" -e "$@" ;;
+        esac
+        return
+    done
+    echo "rpdp: no terminal emulator found (lxterminal, xterm, ...)" >&2
+    exit 1
+}
+
+term=$1
+sys=$2
+case $term in
+    -h|--help|help) usage; exit 0 ;;
+    imlac11) term=imlac sys=11 ;;      # earlier spelling
+esac
+if [ -z "$sys" ]; then
+    case $term in
+        vt100) sys=11 ;;               # no VT100 line on the PiDP-10
+        type30|type30b) sys=1 ;;
+        *)     sys=10 ;;
+    esac
+fi
+
+case $sys in
+    10) host=$(qualify "$PIDP_HOST") ;;
+    11) host=$(qualify "${PIDP11_HOST:-$PIDP_HOST}"); sport=$PORT_11 ;;
+    8)  host=$(qualify "${PIDP8_HOST:-$PIDP_HOST}");  sport=$PORT_8 ;;
+    1)  host=$(qualify "${PIDP1_HOST:-$PIDP_HOST}");  sport=$PORT_1 ;;
+    *)  echo "rpdp: unknown system '$sys' (use 10, 11, 8 or 1)" >&2; exit 1 ;;
+esac
+# port VAR: the PiDP-10 terminal's own port, else the system's single port.
+port() { if [ "$sys" = 10 ]; then echo "$1"; else echo "$sport"; fi; }
+
+case $term in
+    "")
+        need ssh openssh-clients
+        echo "ssh into $host. Assumes the PDP-10 simulation is running."
+        echo "Opening the pdp screen session; Ctrl-A d to leave."
+        exec ssh -t "$PIDP_USER@$host" pdp
+        ;;
+    con)
+        need sty pidp10
+        need telnet telnet
+        bg sty -e telnet "$host" "$(port "$PORT_CON")"
+        ;;
+    telcon)
+        need telnet telnet
+        termwin telnet "$host" "$(port "$PORT_TELCON")"
+        ;;
+    vt52)
+        need vt52 vt05
+        bg vt52 -B telnet "$host" "$(port "$PORT_VT52")"
+        ;;
+    vt05)
+        need vt05 vt05
+        bg vt05 -B telnet "$host" "$(port "$PORT_VT05")"
+        ;;
+    vt100)
+        need vt100 terminal-simulator
+        bg vt100 telnet "$host" "$(port "$PORT_VT100")"
+        ;;
+    tvcon)
+        if [ "$sys" != 10 ]; then
+            echo "rpdp: tvcon is PDP-10 only" >&2; exit 1
+        fi
+        need tvcon tvcon
+        bg tvcon -2BS -p "$PORT_TVCON" "$host"
+        ;;
+    type30|type30b)
+        if [ "$sys" != 1 ]; then
+            echo "rpdp: $term is PDP-1 only" >&2; exit 1
+        fi
+        # p7simES (OpenGL ES) is what the Pi wants; desktops use plain p7sim.
+        p7=p7sim; [ "$(uname -m)" = aarch64 ] && p7=p7simES
+        need $p7 p7sim
+        if [ "$term" = type30 ]; then p=$PORT_TYPE30; else p=$PORT_TYPE30B; fi
+        bg $p7 -p "$p" "$host"
+        ;;
+    tek|tek4010)
+        need tek4010 tek4010
+        bg tek4010 -b9600 telnet "$host" "$(port "$PORT_TEK")"
+        ;;
+    dp3300)
+        need dp3300 vt05
+        bg dp3300 -a -B telnet "$host" "$(port "$PORT_DP3300")"
+        ;;
+    imlac)
+        need imlac sImlac
+        iport=$(port "$PORT_IMLAC")
+        extra=
+        # 2.11BSD is case sensitive; undo the ITS-style case flip.
+        [ "$sys" = 11 ] && extra="enable case invert"
+        [ "$sys" = 10 ] && echo "ITS tip: don't forget to enter :tctyp oimlac after logging in"
+        dir=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/rpdp-imlac.XXXXXX") || exit 1
+        # sImlac runs a startup script without waiting, so it can only
+        # start the SSV22 loader; the switch to the network is done by hand.
+        # Its debugger reads numbers as octal unless prefixed, hence "d".
+        cat >"$dir/imlac.sImlac" <<SIMH
+attach tty file /usr/share/rpdp/ssv22.iml
+$extra
+boot stty
+SIMH
+        cat <<MSG
+Imlac: once the SSV22 loader has finished (the display changes), press
+Ctrl-C in this terminal and type:
+    detach tty
+    attach tty telnet $host d$iport
+    go
+MSG
+        # Foreground: the sImlac debugger prompt is in this terminal.
+        imlac "$dir/imlac.sImlac"
+        rm -rf "$dir"
+        ;;
+    *)
+        usage >&2
+        exit 1
+        ;;
+esac
