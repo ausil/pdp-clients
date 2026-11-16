@@ -1,4 +1,4 @@
-%global gitdate 20261107
+%global gitdate 20261115
 
 Name:           p7sim
 Version:        0.1
@@ -9,6 +9,11 @@ URL:            https://github.com/aap/p7sim
 # ./make-git-snapshot.sh
 Source0:        %{name}-%{gitdate}.tar.bz2
 Source1:        make-git-snapshot.sh
+
+# Upstream only paces its refresh off the delay field of the words it receives,
+# and the PiDP-1 pdp1 sends none, so nothing was ever drawn.  Downstream until
+# aap weighs in.
+Patch0:         0001-wall-clock-frame-pump.patch
 
 BuildRequires:  gcc
 BuildRequires:  make
@@ -46,5 +51,11 @@ install -Dm755 -t %{buildroot}%{_bindir} p7sim p7simES
 %{_bindir}/p7simES
 
 %changelog
+* Sun Nov 15 2026 Dennis Gilmore <dennis@ausil.us> - 0.1-1.20261115
+- Draw frames from the wall clock when the display stream carries no timing
+  words, which is what the PiDP-1 pdp1 sends.  Without it the window stayed
+  black forever.  Also report the emulator hanging up instead of exiting
+  silently.
+
 * Sat Nov 07 2026 Dennis Gilmore <dennis@ausil.us> - 0.1-1.20261107
 - Initial packaging

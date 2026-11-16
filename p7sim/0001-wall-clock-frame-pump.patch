@@ -1,0 +1,85 @@
+From: Dennis Gilmore <dennis@ausil.us>
+Subject: [PATCH] draw frames from the wall clock when the stream has no timing
+
+p7sim: draw frames from the wall clock when the stream has no timing
+
+readthread() only advances the display clock by the delay field (bits 23-31)
+of each word it receives, and it only calls draw() from inside that clock:
+
+	while(time > frmtime) { ... process(frmtime); signal_draw(); }
+
+The PiDP-1 pdp1 (pidp1-mods; src/pdp1/netPorts.c serves the Type 30 display
+on 3400-3403) sends every word with a zero delay, so "time" never leaves 0,
+draw() never runs, and neither the phosphor nor the window is ever painted:
+p7sim connects, takes thousands of points a second, and shows a black window
+forever.  On Wayland it is worse, since a window that never swaps its buffers
+is never mapped at all.
+
+Fall back to the wall clock when the stream carries no timing, which paces the
+display at the same ~30fps the timing path would have used.  Streams that do
+carry delays are untouched.
+
+Also say something when the emulator hangs up instead of exiting silently:
+display.c dropClient() closes the socket whenever a second client takes the
+screen or a client stalls, and readthread() did a bare exit(0), so the window
+just vanished with no explanation.
+---
+--- a/main.c
++++ b/main.c
+@@ -2,6 +2,7 @@
+ #include <stdio.h>
+ #include <string.h>
+ #include <stdarg.h>
++#include <errno.h>
+ #include <stdint.h>
+ #include <ctype.h>
+ 
+@@ -747,11 +748,24 @@
+ simtime = 0;
+ realtime = realtime_start;
+ 
++	// Some emulators (the PiDP-1 pdp1, for one) send every word with a zero
++	// delay, so the display clock below never advances, draw() is never
++	// called, and the screen never shows anything.  Fall back to the wall
++	// clock for those streams so the phosphor still ages ~30 times a second.
++	uint64 walllast = SDL_GetPerformanceCounter();
++	uint64 walltime = 0;
++
+ 	time = 0;
+ 	int esc = 0;
+ for(;;){
+ 	nbytes = read(netfd, cmds, sizeof(cmds));
+-if(nbytes <= 0) break;
++if(nbytes <= 0) {
++	if(nbytes < 0)
++		fprintf(stderr, "%s: display read: %s\n", argv0, strerror(errno));
++	else
++		fprintf(stderr, "%s: display closed the connection\n", argv0);
++	break;
++}
+ if((nbytes % 4) != 0) printf("yikes %d\n", nbytes), exit(1);
+ 	ncmds = nbytes/4;
+ 
+@@ -791,6 +805,20 @@
+ 
+ 		// we hope draw is finished before we decide to flip again
+ 		// 30fps should be doable
++		if(time == 0) {
++			// no timing in the stream, see walllast above
++			uint64 wallnow = SDL_GetPerformanceCounter();
++			walltime += (wallnow - walllast) * 1000000ULL / SDL_GetPerformanceFrequency();
++			walllast = wallnow;
++			while(walltime > frmtime) {
++				walltime -= frmtime;
++simtime += frmtime;
++realtime = SDL_GetPerformanceCounter() - realtime_start;
++wait_canprocess();
++				process(frmtime);
++signal_draw();
++			}
++		}
+ 		while(time > frmtime) {
+ 			time -= frmtime;
+ simtime += frmtime;
+-- 
+2.4.3
