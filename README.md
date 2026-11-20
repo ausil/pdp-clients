@@ -108,5 +108,5 @@ absorbs the change. Current patches:
 - **rpdp** is a noarch package of sources kept in the repo (launcher script,
   `rpdp.conf`, `ssv22.iml` from obsolescence/rpdp), not a git snapshot, so
   `update-snapshot.sh` does not apply. It ships no binaries: it requires
-  `tvcon`, `vt05` (vt05, vt52, dp3300), `terminal-simulator` (vt100), `p7sim` (Type 30), `tek4010` and `sImlac`, and recommends
+  `tvcon`, `vt05` (vt05, vt52, dp3300), `terminal-simulator` (vt100), `p7sim` (Type 30), `tek4010`, `sImlac` and `open-simh` (GT40), and recommends
   `pidp10` for `sty` and the Teletype sounds. Bump `Release:` by hand.

@@ -1,6 +1,6 @@
 Name:           rpdp
 Version:        1.0
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Launch terminal simulators connected to a remote PiDP-10
 License:        MIT
 URL:            https://github.com/obsolescence/rpdp
@@ -19,6 +19,7 @@ Requires:       terminal-simulator
 Requires:       p7sim
 Requires:       tek4010
 Requires:       sImlac
+Requires:       open-simh
 # sty (the Teletype with sounds) comes from the main PiDP-10 package.
 Recommends:     pidp10
 Recommends:     lxterminal
@@ -26,7 +27,7 @@ Recommends:     lxterminal
 %description
 rpdp turns a desktop, laptop or second Raspberry Pi into terminals for a
 PiDP-10, PiDP-11, PiDP-8 or PiDP-1 elsewhere on the network: Knight TV, DEC VT-52, Datapoint 3300,
-Tektronix 4010, Imlac and Teletype consoles.  Run `rpdp vt52`, `rpdp tvcon`
+Tektronix 4010, Imlac, GT40 and Teletype consoles.  Run `rpdp vt52`, `rpdp tvcon`
 and so on, after setting the PiDP-10's host name and user in /etc/rpdp.conf.
 
 This is the same interface as the rpdp scripts from obsolescence/rpdp, but
@@ -50,5 +51,8 @@ install -Dm644 %{SOURCE2} %{buildroot}%{_datadir}/rpdp/ssv22.iml
 %{_datadir}/rpdp/
 
 %changelog
+* Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-2
+- Add rpdp gt40, the GT40 terminal from open-simh (PORT_GT40, default 10019)
+
 * Sat Nov 07 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-1
 - Initial packaging of the rpdp launcher scripts

@@ -14,7 +14,7 @@ PIDP_USER=pi
 # PiDP-10 (ITS / TOPS-20): one port per terminal type.
 : "${PORT_CON:=1025}" "${PORT_TELCON:=1025}" "${PORT_VT52:=10018}" "${PORT_VT05:=10018}"
 : "${PORT_VT100:=10018}" "${PORT_TVCON:=11100}" "${PORT_TEK:=10017}"
-: "${PORT_DP3300:=10020}" "${PORT_IMLAC:=10003}"
+: "${PORT_DP3300:=10020}" "${PORT_IMLAC:=10003}" "${PORT_GT40:=10019}"
 # The other machines have one terminal port, whatever the terminal is:
 # PiDP-11 2.11BSD DZ11 mux, PiDP-8 TSS/8 ttix, PiDP-1 Soroban typewriter.
 : "${PORT_TYPE30:=3400}" "${PORT_TYPE30B:=3401}"
@@ -46,6 +46,7 @@ Terminals:
   tek      Tektronix 4010 storage tube graphics
   imlac    Imlac (PDP-10 ITS: type :tctyp oimlac after logging in)
   tvcon    Knight TV (PDP-10 only)
+  gt40     DEC GT40 graphics terminal (PDP-10 only; open-simh PDP-11)
   type30   PDP-1 Type 30 display on the PiDP-1 (port $PORT_TYPE30)
   type30b  PDP-1 second Type 30 display (port $PORT_TYPE30B)
 
@@ -150,6 +151,14 @@ case $term in
         fi
         need tvcon tvcon
         bg tvcon -2BS -p "$PORT_TVCON" "$host"
+        ;;
+    gt40)
+        if [ "$sys" != 10 ]; then
+            echo "rpdp: gt40 is PDP-10 only" >&2; exit 1
+        fi
+        need gt40 open-simh
+        # Foreground: the simh console (Ctrl-E, then quit) is in this terminal.
+        exec gt40 "$host" "$PORT_GT40"
         ;;
     type30|type30b)
         if [ "$sys" != 1 ]; then
