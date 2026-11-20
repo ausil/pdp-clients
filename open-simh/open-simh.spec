@@ -2,7 +2,7 @@
 
 Name:           open-simh
 Version:        4.1.0
-Release:        1.%{gitdate}%{?dist}
+Release:        2.%{gitdate}%{?dist}
 Summary:        Open SIMH PDP-11 simulator, with VT11 display for use as a GT40
 License:        MIT
 URL:            https://github.com/open-simh/simh
@@ -21,9 +21,9 @@ BuildRequires:  libpng-devel
 BuildRequires:  pcre2-devel
 BuildRequires:  zlib-devel
 
-# gt40.ini uses the GT40 bootstrap ROM image from pidp10 when it is there
-# and falls back to the one built into the simulator.
-Recommends:     pidp10
+# gt40.ini boots the GT40 bootstrap ROM image (bootvt.img) from the PiDP-10
+# client support.
+Requires:       pidp10-clients
 
 %description
 The PDP-11 simulator from Open SIMH, built with SDL2 video so that the VT11
@@ -63,6 +63,9 @@ install -Dm644 %{SOURCE2} %{buildroot}%{_datadir}/%{name}/gt40.ini
 %{_datadir}/%{name}/
 
 %changelog
+* Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-2.20261120
+- Require pidp10-clients for the GT40 bootstrap ROM
+
 * Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 4.1.0-1.20261120
 - Initial packaging: the pdp11 simulator as open-simh-pdp11, with a gt40
   launcher

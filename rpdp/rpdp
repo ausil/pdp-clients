@@ -125,7 +125,7 @@ case $term in
         exec ssh -t "$PIDP_USER@$host" pdp
         ;;
     con)
-        need sty pidp10
+        need sty pidp10-clients
         need telnet telnet
         bg sty -e telnet "$host" "$(port "$PORT_CON")"
         ;;

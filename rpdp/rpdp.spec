@@ -1,6 +1,6 @@
 Name:           rpdp
 Version:        1.0
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Launch terminal simulators connected to a remote PiDP-10
 License:        MIT
 URL:            https://github.com/obsolescence/rpdp
@@ -20,8 +20,8 @@ Requires:       p7sim
 Requires:       tek4010
 Requires:       sImlac
 Requires:       open-simh
-# sty (the Teletype with sounds) comes from the main PiDP-10 package.
-Recommends:     pidp10
+# sty (the Teletype with sounds) comes from the PiDP-10 client support.
+Requires:       pidp10-clients
 Recommends:     lxterminal
 
 %description
@@ -51,6 +51,9 @@ install -Dm644 %{SOURCE2} %{buildroot}%{_datadir}/rpdp/ssv22.iml
 %{_datadir}/rpdp/
 
 %changelog
+* Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-3
+- Require pidp10-clients for sty and the Teletype sounds
+
 * Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-2
 - Add rpdp gt40, the GT40 terminal from open-simh (PORT_GT40, default 10019)
 

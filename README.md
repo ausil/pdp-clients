@@ -103,10 +103,10 @@ absorbs the change. Current patches:
   display.  It is installed as `open-simh-pdp11` because other packages
   already own `/usr/bin/pdp11`.  `gt40` and `gt40.ini` are kept in the repo;
   the settings follow pidp10's `conf/gt40.simh`, with the DL11 connecting to
-  HOST:PORT (default 10019).  It boots pidp10's `bootvt.img` when that is
-  installed and the simulator's built-in GT40 ROM otherwise.
+  HOST:PORT (default 10019).  It requires `pidp10-clients`
+  for the GT40 bootstrap ROM, `bootvt.img`.
 - **rpdp** is a noarch package of sources kept in the repo (launcher script,
   `rpdp.conf`, `ssv22.iml` from obsolescence/rpdp), not a git snapshot, so
   `update-snapshot.sh` does not apply. It ships no binaries: it requires
-  `tvcon`, `vt05` (vt05, vt52, dp3300), `terminal-simulator` (vt100), `p7sim` (Type 30), `tek4010`, `sImlac` and `open-simh` (GT40), and recommends
-  `pidp10` for `sty` and the Teletype sounds. Bump `Release:` by hand.
+  `tvcon`, `vt05` (vt05, vt52, dp3300), `terminal-simulator` (vt100), `p7sim` (Type 30), `tek4010`, `sImlac` and `open-simh` (GT40), and
+  `pidp10-clients` (`sty` and the Teletype sounds). Bump `Release:` by hand.
