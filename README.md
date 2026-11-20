@@ -12,6 +12,7 @@ the COPR project [`ausil/pdp`](https://copr.fedorainfracloud.org/coprs/ausil/pdp
 | `chaosnet-bridge` | [bictorv/chaosnet-bridge](https://github.com/bictorv/chaosnet-bridge/) | Chaosnet bridge between implementations |
 | `chaosnet-tools` | [Chaosnet/chaosnet-tools](https://github.com/Chaosnet/chaosnet-tools) | TCP gateway, MLDEV file transfer, SEND, RTAPE |
 | `rpdp` | [obsolescence/rpdp](https://github.com/obsolescence/rpdp) (scripts only) | `rpdp` launcher for terminals connected to a remote PiDP-10, -11, -8 or -1; config in `/etc/rpdp.conf` |
+| `open-simh` | [open-simh/simh](https://github.com/open-simh/simh) | `open-simh-pdp11` (PDP-11 with VT11 display) and `gt40 HOST [PORT]` GT40 terminal launcher |
 | `p7sim` | [aap/p7sim](https://github.com/aap/p7sim) | `p7sim` / `p7simES` P7 phosphor display simulator (PDP-1 Type 30) |
 | `pdp6` | [aap/pdp6](https://github.com/aap/pdp6) | `pdp6-emu` (emulator), `pdp6-tools` (as6, ld6, DECtape/paper tape utilities, mkpty33), `pdp6-panel` (standalone front panel) |
 | `sImlac` | [jdersch/sImlac](https://github.com/jdersch/sImlac) | Imlac PDS-1/PDS-4 emulator (.NET) |
@@ -98,6 +99,12 @@ absorbs the change. Current patches:
 - **pdp6** builds with `-std=gnu17` because upstream typedefs `bool`, which
   clashes with the C23 keyword. `fe6/` (real-hardware front end, ARM
   cross-build) and `newemu/` are not packaged.
+- **open-simh** builds only the `pdp11` simulator, with SDL2 for the VT11
+  display.  It is installed as `open-simh-pdp11` because other packages
+  already own `/usr/bin/pdp11`.  `gt40` and `gt40.ini` are kept in the repo;
+  the settings follow pidp10's `conf/gt40.simh`, with the DL11 connecting to
+  HOST:PORT (default 10019).  It boots pidp10's `bootvt.img` when that is
+  installed and the simulator's built-in GT40 ROM otherwise.
 - **rpdp** is a noarch package of sources kept in the repo (launcher script,
   `rpdp.conf`, `ssv22.iml` from obsolescence/rpdp), not a git snapshot, so
   `update-snapshot.sh` does not apply. It ships no binaries: it requires

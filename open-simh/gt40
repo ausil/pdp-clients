@@ -1,0 +1,13 @@
+#!/bin/sh
+
+# Usage: gt40 HOST [PORT]
+#
+# Run the open-simh PDP-11 as a GT40 terminal connected to HOST:PORT.
+# PORT defaults to 10019, the GT40 line of ITS on the PiDP-10.
+
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+    echo "usage: gt40 HOST [PORT]" >&2
+    exit 1
+fi
+
+exec open-simh-pdp11 /usr/share/open-simh/gt40.ini "$1" "${2:-10019}"
