@@ -1,4 +1,4 @@
-%global gitdate 20261106
+%global gitdate 20261119
 
 Name:           tv11
 Version:        1.0
@@ -9,6 +9,11 @@ URL:            https://github.com/aap/tv11
 # ./make-git-snapshot.sh
 Source0:        %{name}-%{gitdate}.tar.bz2
 Source1:        make-git-snapshot.sh
+# hasinput() did FD_SET() on the optional /tmp/tty descriptor even when it is
+# -1, which _FORTIFY_SOURCE turns into an abort a moment after startup (and
+# takes the 11100 listener thread with it); tvcon carried on after a failed
+# connect and segfaulted. Not yet sent upstream.
+Patch0:         tv11-optional-fds.patch
 
 BuildRequires:  gcc
 BuildRequires:  make
@@ -50,5 +55,10 @@ install -Dm755 tvcon/tvcon %{buildroot}%{_bindir}/tvcon
 %{_bindir}/tvcon
 
 %changelog
+* Thu Nov 19 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-1.20261119
+- Snapshot 20261119
+- Don't FD_SET()/write() the optional tty descriptor when /tmp/tty is absent
+  (abort under _FORTIFY_SOURCE); make tvcon exit when it cannot connect
+
 * Fri Nov 06 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-1.20261106
 - Initial packaging

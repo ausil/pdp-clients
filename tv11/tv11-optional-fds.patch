@@ -1,0 +1,47 @@
+diff -ru a/cpu.c b/cpu.c
+--- a/cpu.c	2019-03-04 06:48:40.000000000 -0600
++++ b/cpu.c	2026-11-19 23:29:38.494890342 -0600
+@@ -1112,10 +1112,11 @@
+ 			continue;
+ 		n = 0;
+ 
+-		/* transmit */
++		/* transmit (the tty is optional: ttyfd is -1 without /tmp/tty) */
+ 		if(!cpu->xmit_tbmt){
+ 			uint8 c = cpu->xmit_b & 0177;
+-			write(cpu->ttyfd, &c, 1);
++			if(cpu->ttyfd >= 0)
++				write(cpu->ttyfd, &c, 1);
+ 			cpu->xmit_tbmt = 1;
+ 			cpu->xmit_int = 1;
+ 		}
+diff -ru a/tvcon/tvcon.c b/tvcon/tvcon.c
+--- a/tvcon/tvcon.c	2019-03-04 06:48:40.000000000 -0600
++++ b/tvcon/tvcon.c	2026-11-19 23:29:38.495101719 -0600
+@@ -757,6 +757,11 @@
+ 	initkeymap();
+ 
+ 	fd = dial(host, port);
++	if(fd < 0){
++		fprintf(stderr, "%s: can't connect to tv11 at %s port %d\n",
++			argv0, host, port);
++		return 1;
++	}
+ 
+ 	if(SDL_CreateWindowAndRenderer(WIDTH*scale, HEIGHT*scale, 0, &window, &renderer) < 0)
+ 		panic("SDL_CreateWindowAndRenderer() failed: %s\n", SDL_GetError());
+diff -ru a/util.c b/util.c
+--- a/util.c	2019-03-04 06:48:40.000000000 -0600
++++ b/util.c	2026-11-19 23:29:38.494679126 -0600
+@@ -14,6 +14,11 @@
+ 	fd_set fds;
+ 	struct timeval timeout;
+ 
++	/* Callers pass descriptors that may not exist (cpu->ttyfd is -1
++	 * unless /tmp/tty does). FD_SET on a negative fd is undefined, and
++	 * with _FORTIFY_SOURCE it aborts the program. */
++	if(fd < 0 || fd >= FD_SETSIZE)
++		return 0;
+ 	timeout.tv_sec = 0;
+ 	timeout.tv_usec = 0;
+ 	FD_ZERO(&fds);
