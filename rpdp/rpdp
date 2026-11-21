@@ -1,6 +1,7 @@
 #!/bin/bash
 # rpdp - open terminals on this machine, connected to a remote PiDP.
-# Usage: rpdp [TERMINAL [SYSTEM]]      SYSTEM is 10 (default), 11, 8 or 1
+# Usage: rpdp [TERMINAL [SYSTEM [LINE]]]   SYSTEM is 10 (default), 11, 8 or 1
+#        LINE (PiDP-11 only) is dz (default) or con
 # Configuration: /etc/rpdp.conf, then ~/.config/rpdp.conf.
 
 PIDP_HOST=pidp10
@@ -32,7 +33,7 @@ usage() {
     cat <<USAGE
 rpdp - terminals for a remote PiDP
 
-Usage: rpdp [TERMINAL [SYSTEM]]
+Usage: rpdp [TERMINAL [SYSTEM [LINE]]]
 
   (none)   ssh to $PIDP_USER@$(qualify "$PIDP_HOST") and attach to the \`pdp\` screen (Ctrl-A d to leave; also: rpdp sim)
   pdp6     ssh in and attach to the PDP-6 console session (\`pdp pdp6\`; Ctrl-A d to leave)
@@ -41,9 +42,10 @@ Terminals:
   con      Teletype console, noisy and slow (the sty emulator; also: rpdp sty)
   telcon   Teletype console, quiet and fast (telnet in a terminal window; also: rpdp console)
   vt52     DEC VT-52
+  vt52f    DEC VT-52, full screen
   vt05     DEC VT05
   vt100    DEC VT100
-  dp3300   Datapoint 3300
+  dp3300   Datapoint 3300 (also: dp3300-ascii)
   tek      Tektronix 4010 storage tube graphics
   imlac    Imlac (PDP-10 ITS: type :tctyp oimlac after logging in)
   tvcon    Knight TV (PDP-10 only)
@@ -57,15 +59,24 @@ Systems (default 10; vt100 and imlac11 default to/mean 11):
   8   PiDP-8    host \$PIDP8_HOST,  port \$PORT_8 ($PORT_8, TSS/8 ttix)
   1   PiDP-1    host \$PIDP1_HOST,  port \$PORT_1 ($PORT_1, Soroban typewriter)
 
+Lines (PiDP-11 only; for con, telcon, vt52, vt52f, vt05, vt100, tek, dp3300):
+  dz   telnet to the 2.11BSD DZ11 mux, port \$PORT_11 (default)
+  con  ssh to \$PIDP11_USER@\$PIDP11_HOST and run pdp11: the simh console,
+       like the PiDP-11's own desktop entries
+
 Examples:  rpdp type30       PDP-1 Type 30 display
            rpdp vt52          VT-52 on the PiDP-10
            rpdp vt100 8       VT100 on the PiDP-8
            rpdp imlac 11      Imlac on the PiDP-11
+           rpdp vt52 11 con   VT52 on the PiDP-11's simh console
+           rpdp vt100 con     VT100 on the PiDP-11's simh console
+           rpdp sim 11        the PiDP-11's simh console in this terminal
            rpdp telcon 1      telnet window to the PiDP-1 Soroban
 
 Set PIDP_HOST, PIDP11_HOST, PIDP8_HOST, PIDP1_HOST (each defaults to
-PIDP_HOST), PIDP_USER and any PORT_* in /etc/rpdp.conf or
-~/.config/rpdp.conf (or the environment) to match your setup.
+PIDP_HOST), PIDP_USER, PIDP11_USER (defaults to PIDP_USER) and any PORT_*
+in /etc/rpdp.conf or ~/.config/rpdp.conf (or the environment) to match
+your setup.
 If you switch Teletypes, leave the first one properly (Ctrl-[, quit) or the
 line stays busy.
 USAGE
@@ -96,12 +107,17 @@ termwin() {
 
 term=$1
 sys=$2
+line=$3
+# A line in place of the system keeps the terminal's default system
+# (rpdp vt100 con is the VT100 on the PiDP-11's console).
+case $sys in dz|con) line=$sys sys= ;; esac
 case $term in
     -h|--help|help) usage; exit 0 ;;
     imlac11) term=imlac sys=11 ;;      # earlier spelling
     sim)     term= ;;                  # same names as \`pdp\` on the PiDP-10
     console) term=telcon ;;
     sty)     term=con ;;
+    dp3300-ascii) term=dp3300 ;;
 esac
 if [ -z "$sys" ]; then
     case $term in
@@ -121,12 +137,47 @@ esac
 # port VAR: the PiDP-10 terminal's own port, else the system's single port.
 port() { if [ "$sys" = 10 ]; then echo "$1"; else echo "$sport"; fi; }
 
+user=$PIDP_USER
+[ "$sys" = 11 ] && user=${PIDP11_USER:-$PIDP_USER}
+
+case $line in
+    ""|dz) line=dz ;;
+    con)
+        if [ "$sys" != 11 ]; then
+            echo "rpdp: line con is PiDP-11 only" >&2; exit 1
+        fi
+        case $term in
+            con|telcon|vt52|vt52f|vt05|vt100|tek|tek4010|dp3300|"") ;;
+            *) echo "rpdp: $term has no con line" >&2; exit 1 ;;
+        esac
+        ;;
+    *)  echo "rpdp: unknown line '$line' (use dz or con)" >&2; exit 1 ;;
+esac
+
+# link VAR: set cmd to what the terminal runs: telnet to the port in VAR (see
+# port), or on the con line ssh to the PiDP-11 and attach to its simh console,
+# as the PiDP-11's own desktop entries do with "bash pdp11".
+link() {
+    if [ "$line" = con ]; then
+        need ssh openssh-clients
+        cmd=(ssh -t "$user@$host" pdp11)
+    else
+        need telnet telnet
+        cmd=(telnet "$host" "$(port "$1")")
+    fi
+}
+
 case $term in
     "")
         need ssh openssh-clients
-        echo "ssh into $host. Assumes the PDP-10 simulation is running."
-        echo "Opening the pdp screen session; Ctrl-A d to leave."
-        exec ssh -t "$PIDP_USER@$host" pdp
+        case $sys in
+            10) cmd=pdp   what=PDP-10 ;;
+            11) cmd=pdp11 what=PDP-11 ;;
+            *)  echo "rpdp: no simh session to attach to on system $sys" >&2; exit 1 ;;
+        esac
+        echo "ssh into $host. Assumes the $what simulation is running."
+        echo "Opening the $cmd screen session; Ctrl-A d to leave."
+        exec ssh -t "$user@$host" "$cmd"
         ;;
     pdp6)
         if [ "$sys" != 10 ]; then
@@ -141,24 +192,28 @@ case $term in
         ;;
     con)
         need sty pidp10-clients
-        need telnet telnet
-        bg sty -e telnet "$host" "$(port "$PORT_CON")"
+        link "$PORT_CON"
+        bg sty -e "${cmd[@]}"
         ;;
     telcon)
-        need telnet telnet
-        termwin telnet "$host" "$(port "$PORT_TELCON")"
+        link "$PORT_TELCON"
+        termwin "${cmd[@]}"
         ;;
-    vt52)
+    vt52|vt52f)
         need vt52 vt05
-        bg vt52 -B telnet "$host" "$(port "$PORT_VT52")"
+        link "$PORT_VT52"
+        full=; [ "$term" = vt52f ] && full=-f
+        bg vt52 $full -B "${cmd[@]}"
         ;;
     vt05)
         need vt05 vt05
-        bg vt05 -B telnet "$host" "$(port "$PORT_VT05")"
+        link "$PORT_VT05"
+        bg vt05 -B "${cmd[@]}"
         ;;
     vt100)
         need vt100 terminal-simulator
-        bg vt100 telnet "$host" "$(port "$PORT_VT100")"
+        link "$PORT_VT100"
+        bg vt100 "${cmd[@]}"
         ;;
     tvcon)
         if [ "$sys" != 10 ]; then
@@ -187,11 +242,13 @@ case $term in
         ;;
     tek|tek4010)
         need tek4010 tek4010
-        bg tek4010 -b9600 telnet "$host" "$(port "$PORT_TEK")"
+        link "$PORT_TEK"
+        bg tek4010 -b9600 "${cmd[@]}"
         ;;
     dp3300)
         need dp3300 vt05
-        bg dp3300 -a -B telnet "$host" "$(port "$PORT_DP3300")"
+        link "$PORT_DP3300"
+        bg dp3300 -a -B "${cmd[@]}"
         ;;
     imlac)
         need imlac sImlac

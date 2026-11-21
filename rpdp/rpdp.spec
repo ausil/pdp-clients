@@ -1,6 +1,6 @@
 Name:           rpdp
 Version:        1.0
-Release:        4%{?dist}
+Release:        5%{?dist}
 Summary:        Launch terminal simulators connected to a remote PiDP-10
 License:        MIT
 URL:            https://github.com/obsolescence/rpdp
@@ -51,6 +51,14 @@ install -Dm644 %{SOURCE2} %{buildroot}%{_datadir}/rpdp/ssv22.iml
 %{_datadir}/rpdp/
 
 %changelog
+* Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-5
+- PiDP-11 terminals take a line: dz (telnet to the DZ11 mux, the default)
+  or con (ssh in and run pdp11, the simh console); rpdp vt100 con uses
+  the VT100's default system, the PiDP-11
+- Add rpdp sim 11 for the PiDP-11's simh console, and PIDP11_USER
+- Add vt52f, the full screen VT52
+- Accept dp3300-ascii, as pdp does
+
 * Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-4
 - Add rpdp pdp6, which attaches to the PiDP-10's PDP-6 console session
 - Imlac on the PiDP-10 is ITS line 7, port 10016 (was 10003)
