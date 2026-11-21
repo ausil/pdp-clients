@@ -14,7 +14,7 @@ PIDP_USER=pi
 # PiDP-10 (ITS / TOPS-20): one port per terminal type.
 : "${PORT_CON:=1025}" "${PORT_TELCON:=1025}" "${PORT_VT52:=10018}" "${PORT_VT05:=10018}"
 : "${PORT_VT100:=10018}" "${PORT_TVCON:=11100}" "${PORT_TEK:=10017}"
-: "${PORT_DP3300:=10020}" "${PORT_IMLAC:=10003}" "${PORT_GT40:=10019}"
+: "${PORT_DP3300:=10020}" "${PORT_IMLAC:=10016}" "${PORT_GT40:=10019}"
 # The other machines have one terminal port, whatever the terminal is:
 # PiDP-11 2.11BSD DZ11 mux, PiDP-8 TSS/8 ttix, PiDP-1 Soroban typewriter.
 : "${PORT_TYPE30:=3400}" "${PORT_TYPE30B:=3401}"
@@ -34,11 +34,12 @@ rpdp - terminals for a remote PiDP
 
 Usage: rpdp [TERMINAL [SYSTEM]]
 
-  (none)   ssh to $PIDP_USER@$(qualify "$PIDP_HOST") and attach to the \`pdp\` screen (Ctrl-A d to leave)
+  (none)   ssh to $PIDP_USER@$(qualify "$PIDP_HOST") and attach to the \`pdp\` screen (Ctrl-A d to leave; also: rpdp sim)
+  pdp6     ssh in and attach to the PDP-6 console session (\`pdp pdp6\`; Ctrl-A d to leave)
 
 Terminals:
-  con      Teletype console, noisy and slow (sty)
-  telcon   Teletype console, quiet and fast (telnet in a terminal window)
+  con      Teletype console, noisy and slow (the sty emulator; also: rpdp sty)
+  telcon   Teletype console, quiet and fast (telnet in a terminal window; also: rpdp console)
   vt52     DEC VT-52
   vt05     DEC VT05
   vt100    DEC VT100
@@ -98,6 +99,9 @@ sys=$2
 case $term in
     -h|--help|help) usage; exit 0 ;;
     imlac11) term=imlac sys=11 ;;      # earlier spelling
+    sim)     term= ;;                  # same names as \`pdp\` on the PiDP-10
+    console) term=telcon ;;
+    sty)     term=con ;;
 esac
 if [ -z "$sys" ]; then
     case $term in
@@ -123,6 +127,17 @@ case $term in
         echo "ssh into $host. Assumes the PDP-10 simulation is running."
         echo "Opening the pdp screen session; Ctrl-A d to leave."
         exec ssh -t "$PIDP_USER@$host" pdp
+        ;;
+    pdp6)
+        if [ "$sys" != 10 ]; then
+            echo "rpdp: pdp6 runs on the PiDP-10 only" >&2; exit 1
+        fi
+        need ssh openssh-clients
+        # The PDP-6 has no telnet console; its console is the pidp6 screen
+        # session on the PiDP-10, which \`pdp pdp6\` attaches to.
+        echo "ssh into $host. Assumes the PDP-6 simulation is running."
+        echo "Opening the PDP-6 console session; Ctrl-A d to leave."
+        exec ssh -t "$PIDP_USER@$host" pdp pdp6
         ;;
     con)
         need sty pidp10-clients

@@ -1,6 +1,6 @@
 Name:           rpdp
 Version:        1.0
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:        Launch terminal simulators connected to a remote PiDP-10
 License:        MIT
 URL:            https://github.com/obsolescence/rpdp
@@ -51,6 +51,11 @@ install -Dm644 %{SOURCE2} %{buildroot}%{_datadir}/rpdp/ssv22.iml
 %{_datadir}/rpdp/
 
 %changelog
+* Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-4
+- Add rpdp pdp6, which attaches to the PiDP-10's PDP-6 console session
+- Imlac on the PiDP-10 is ITS line 7, port 10016 (was 10003)
+- Accept sim, console and sty, the names pdp uses on the PiDP-10
+
 * Fri Nov 20 2026 Dennis Gilmore <dennis@ausil.us> - 1.0-3
 - Require pidp10-clients for sty and the Teletype sounds
 
